@@ -1,0 +1,319 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters": {
+      "InstanceType": {
+        "Description": "Server instance type",
+        "Type": "String",
+        "Default": "t2.micro",
+        "AllowedValues": [
+          "t2.micro"
+        ],
+        "ConstraintDescription": "Must be a valid EC2 type."
+      },
+      "KeyPair": {
+          "Description": "Name of your EC2 Keypair to enable SSH access",
+          "Type": "AWS::EC2::KeyPair::KeyName",
+          "ConstraintDescription": "Must be the name of an existing KeyPair"
+      },
+      "YourIP": {
+          "Description": "Your IP address must be a valid IP in CIDR notation form x.x.x.x/32. To check your ip, in new browser run: http://checkip.amazonaws.com/",
+          "Type": "String",
+          "MinLength": "9",
+          "MaxLength": "18",
+          "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+          "ConstraintDescription": "Must be a valid IP in CIDR notation form x.x.x.x/x."
+      }
+    },
+    "Resources": {
+      "Vpc": {
+        "Type": "AWS::EC2::VPC",
+        "Properties": {
+          "EnableDnsSupport": "true",
+          "EnableDnsHostnames": "true",
+          "CidrBlock": "10.25.0.0/16",
+          "Tags": [
+            {"Key": "Name", "Value": "my-vpc"}
+          ]
+        }
+      },
+      "InternetGateway": {
+        "Type": "AWS::EC2::InternetGateway",
+        "Properties": {
+          "Tags": [
+            {"Key": "Name", "Value": "my-ig"}
+          ]
+        }
+      },
+      "VPCGatewayAttachment": {
+        "Type": "AWS::EC2::VPCGatewayAttachment",
+        "Properties": {
+          "InternetGatewayId": { "Ref" : "InternetGateway" },
+          "VpcId": { "Ref" : "Vpc" }
+        }
+      },
+      "PublicRouteTable": {
+        "Type": "AWS::EC2::RouteTable",
+        "Properties": {
+          "VpcId": { "Ref" : "Vpc" },
+          "Tags": [
+            {"Key": "Name", "Value": "Public RT"}
+          ]
+        }
+      },
+      "PublicRoute": {
+        "Type": "AWS::EC2::Route",
+        "Properties": {
+          "DestinationCidrBlock": "0.0.0.0/0",
+          "RouteTableId": { "Ref" : "PublicRouteTable" },
+          "GatewayId": { "Ref" : "InternetGateway" }
+        }
+      },
+      "PublicSubnet1": {
+        "Type": "AWS::EC2::Subnet",
+        "Properties": {
+          "VpcId": { "Ref" : "Vpc" },
+          "MapPublicIpOnLaunch" : "true",
+          "CidrBlock": "10.25.1.0/24",
+          "AvailabilityZone" : {
+            "Fn::Select" : [ "0", { "Fn::GetAZs" : { "Ref" : "AWS::Region" }}]},
+          "Tags" : [
+            {"Key": "Name", "Value": "public1"}
+          ]
+        }
+      },
+      "PublicSubnet2": {
+          "Type": "AWS::EC2::Subnet",
+          "Properties": {
+            "VpcId": { "Ref" : "Vpc" },
+            "MapPublicIpOnLaunch" : "true",
+            "CidrBlock": "10.25.2.0/24",
+            "AvailabilityZone" : {
+              "Fn::Select" : [ "1", { "Fn::GetAZs" : { "Ref" : "AWS::Region" }}]},
+            "Tags" : [
+              {"Key": "Name", "Value": "public2"}
+            ]
+          }
+        },
+        "PublicSubnet1RTass": {
+          "Type": "AWS::EC2::SubnetRouteTableAssociation",
+          "Properties": {
+            "RouteTableId": { "Ref" : "PublicRouteTable" },
+            "SubnetId": { "Ref" : "PublicSubnet1" }
+            }
+        },
+        "PublicSubnet2RTass": {
+          "Type": "AWS::EC2::SubnetRouteTableAssociation",
+          "Properties": {
+            "RouteTableId": { "Ref" : "PublicRouteTable" },
+            "SubnetId": { "Ref" : "PublicSubnet2" }
+            }
+        },
+        "PrivateRouteTable": {
+          "Type": "AWS::EC2::RouteTable",
+          "Properties": {
+            "VpcId": { "Ref" : "Vpc" },
+            "Tags": [
+              {"Key": "Name", "Value": "Private RT"}
+            ]
+          }
+        },
+        "PrivateRoute": {
+          "Type": "AWS::EC2::Route",
+          "Properties": {
+              "DestinationCidrBlock": "0.0.0.0/0",
+            "RouteTableId": { "Ref" : "PrivateRouteTable" },
+            "GatewayId": { "Ref" : "InternetGateway" }
+          }
+        },
+        "PrivateSubnet": {
+          "Type": "AWS::EC2::Subnet",
+          "Properties": {
+            "VpcId": { "Ref" : "Vpc" },
+            "MapPublicIpOnLaunch" : "true",
+            "CidrBlock": "10.25.3.0/24",
+            "AvailabilityZone" : {
+              "Fn::Select" : [ "2", { "Fn::GetAZs" : { "Ref" : "AWS::Region" }}]},
+            "Tags" : [
+              {"Key": "Name", "Value": "private1"}
+            ]
+          }
+        },
+        "PrivateSubnetRTass": {
+          "Type": "AWS::EC2::SubnetRouteTableAssociation",
+          "Properties": {
+            "RouteTableId": { "Ref" : "PrivateRouteTable" },
+            "SubnetId": { "Ref": "PrivateSubnet" }
+          }
+        },
+      "ElasticIp": {
+        "Type": "AWS::EC2::EIP",
+        "Properties": {
+          "Domain": "vpc",
+          "Tags": [
+            {"Key": "Name", "Value": "Elastic IP"}
+          ]
+        }
+      },
+      "WebInterface": {
+        "Type": "AWS::EC2::NetworkInterface",
+        "Properties": {
+          "SubnetId": { "Ref" : "PrivateSubnet" },
+          "Description": "Interface to control traffic.",
+          "GroupSet": [{ "Ref" : "PublicSG"}],
+          "SourceDestCheck" : "true",
+          "Tags" : [ {"Key": "Network", "Value": "Control"}]
+        }
+      },
+      "NatGateway": {
+        "Type": "AWS::EC2::NatGateway",
+        "Properties": {
+          "AllocationId": {"Fn::GetAtt": ["ElasticIp", "AllocationId"]},
+          "SubnetId": { "Ref" : "PrivateSubnet" },
+          "Tags": [
+            {"Key": "Name", "Value": "nat"}
+          ]
+        }
+      },
+      "WebServer1": {
+        "Type": "AWS::EC2::Instance",
+        "Properties" : {
+          "KeyName": { "Ref" : "KeyPair" },
+          "InstanceType": { "Ref" : "InstanceType" },
+          "ImageId": "ami-1ab23c45",
+          "SubnetId": { "Ref" : "PublicSubnet1" },
+          "SecurityGroupIds": [{ "Ref": "PublicSG" }],
+          "Tags" : [
+            {"Key": "Name", "Value": "web1"},
+            {"Key": "Location", "Value": "public1"}
+          ]
+        }
+      },
+      "WebServer2": {
+          "Type": "AWS::EC2::Instance",
+          "Properties" : {
+            "KeyName": { "Ref" : "KeyPair" },
+            "InstanceType": { "Ref" : "InstanceType" },
+            "ImageId": "ami-1ab23c45",
+            "SubnetId": { "Ref": "PublicSubnet2" },
+            "SecurityGroupIds": [{ "Ref" : "PublicSG"}],
+            "Tags" : [
+              {"Key": "Name", "Value": "web2"},
+              {"Key": "Location", "Value": "public2"}
+            ]
+          }
+      },
+      "WebServer3": {
+        "Type": "AWS::EC2::Instance",
+        "Properties" : {
+          "KeyName": { "Ref" : "KeyPair" },
+          "InstanceType": { "Ref" : "InstanceType" },
+          "ImageId": "ami-1ab23c45",
+          "SubnetId": { "Ref": "PrivateSubnet" },
+          "SecurityGroupIds": [{ "Ref" : "PrivateSG"}],
+          "Tags" : [
+            {"Key": "Name", "Value": "web3"},
+            {"Key": "Location", "Value": "private"}
+          ]
+        }
+    },
+    "PrivateSG": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupName": "private-sg",
+          "VpcId": { "Ref" : "pc" },
+          "GroupDescription": "Security group rules for private webserver.",
+          "SecurityGroupIngress": [
+            {
+              "IpProtocol": "tcp",
+              "FromPort": "22",
+              "ToPort": "22",
+              "SourceSecurityGroupId": { "Ref" : "PublicSG" }
+            }
+          ]
+        }
+      },
+      "PublicSG": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupName": "web-sg",
+          "VpcId": { "Ref" : "Vpc" },
+          "GroupDescription": "Security group rules for webserver host.",
+          "SecurityGroupIngress": [
+            {
+              "IpProtocol": "tcp",
+              "FromPort": "80",
+              "ToPort": "80",
+              "CidrIp": "0.0.0.0/0"
+            },
+            {
+              "IpProtocol": "tcp",
+              "FromPort": "22",
+              "ToPort": "22",
+              "CidrIp": { "Ref" : "YourIP" }
+            }
+          ]
+        }
+      },
+      "TargetGroup": {
+          "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+          "Properties": {
+            "HealthCheckEnabled": "true",
+            "HealthCheckIntervalSeconds": "20",
+            "HealthCheckPath": "/",
+            "HealthCheckPort": "80",
+            "HealthCheckProtocol": "HTTP",
+            "Name": "webservers",
+            "Port": "80",
+            "Protocol": "HTTP",
+            "TargetGroupAttributes": [
+              {
+               "Key": "deregistration_delay.timeout_seconds",
+               "Value": "20"
+              }
+            ],
+            "Targets": [
+              {"Id": { "Ref" : "WebServer1" }}, 
+              {"Id": { "Ref" : "WebServer2" }}
+            ],
+            "TargetType": "instance",
+            "UnhealthyThresholdCount": 3,
+            "VpcId": { "Ref" : "Vpc" },
+              "Tags": [
+                {"Key": "Name", "Value": "webservers"}
+              ]
+            }
+       },   
+      "ELBListener": {
+          "Type": "AWS::ElasticLoadBalancingV2::Listener",
+          "Properties": {
+              "DefaultActions": [
+                  {
+                    "Type": "forward",
+                    "TargetGroupArn": { "Ref" : "TargetGroup" } 
+                  }
+                  ],
+              "LoadBalancerArn": { "Ref" : "ApplicationLoadBalancer" },
+              "Port": "80",
+              "Protocol": "HTTP"
+          }
+      },
+      "ApplicationLoadBalancer": {
+          "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+          "Properties": {
+              "Scheme": "internet-facing",
+              "Name": "elb",
+              "SecurityGroups": [{ "Ref" : "PublicSG" }],
+              "Subnets": [
+                  { "Ref": "PublicSubnet1" }, 
+                  { "Ref": "PublicSubnet2" }
+                ]
+          }
+      }
+    },
+   "Outputs" : {
+    "URL" : {
+      "Description": "URL of load balancer DNS name.",
+      "Value":  { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "ApplicationLoadBalancer", "DNSName" ]}]]}
+    }
+  }
+}
